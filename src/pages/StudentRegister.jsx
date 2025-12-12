@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function StudentRegister() {
   const [form, setForm] = useState({
@@ -8,6 +9,7 @@ export default function StudentRegister() {
     rollNumber: "",
     password: "",
   });
+  const navigate = useNavigate();
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -15,11 +17,28 @@ export default function StudentRegister() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // For now, we just show an alert. You can replace with API call later.
-    alert(
-      `Student Registered:\nName: ${form.name}\nEmail: ${form.email}\nMobile: ${form.mobile}\nRoll No: ${form.rollNumber}`
-    );
+
+    // Get existing students from localStorage
+    const students = JSON.parse(localStorage.getItem("students")) || [];
+
+    // Check if roll number already exists
+    const existingStudent = students.find(s => s.rollNumber === form.rollNumber);
+    if (existingStudent) {
+      alert("This roll number is already registered!");
+      return;
+    }
+
+    // Add new student
+    students.push(form);
+    localStorage.setItem("students", JSON.stringify(students));
+
+    alert(`Student Registered Successfully!\nRoll No: ${form.rollNumber}`);
+
+    // Clear form
     setForm({ name: "", email: "", mobile: "", rollNumber: "", password: "" });
+
+    // Optionally redirect to login page
+    navigate("/login");
   };
 
   return (

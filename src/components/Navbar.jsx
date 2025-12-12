@@ -1,26 +1,39 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 
-export default function Navbar() {
+export default function Navbar({ student, setStudent, staff, setStaff }) {
   const navigate = useNavigate();
-  const [student, setStudent] = useState(null);
-  const [staff, setStaff] = useState(null);
+  const [notificationCount, setNotificationCount] = useState(0);
 
-  useEffect(() => {
-    setStudent(JSON.parse(localStorage.getItem("student")));
-    setStaff(JSON.parse(localStorage.getItem("staff")));
-  }, []);
-
-  const handleStudentLogout = () => {
-    localStorage.removeItem("student");
-    setStudent(null);
-    navigate("/student-login");
+  // Load notifications for student
+  const loadNotifications = () => {
+    if (student) {
+      const allNotifications = JSON.parse(localStorage.getItem("notifications")) || {};
+      const studentNotifications = allNotifications[student.rollNumber] || [];
+      const unreadCount = studentNotifications.filter(n => !n.deleted && !n.read).length;
+      setNotificationCount(unreadCount);
+    } else {
+      setNotificationCount(0);
+    }
   };
 
-  const handleStaffLogout = () => {
-    localStorage.removeItem("staff");
-    setStaff(null);
-    navigate("/staff-login");
+  useEffect(() => {
+    loadNotifications();
+    const handleStorageChange = () => loadNotifications();
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, [student]);
+
+  const handleLogout = () => {
+    if (student) {
+      localStorage.removeItem("student");
+      setStudent(null);
+    }
+    if (staff) {
+      localStorage.removeItem("staff");
+      setStaff(null);
+    }
+    navigate("/login");
   };
 
   return (
@@ -28,30 +41,30 @@ export default function Navbar() {
       <div className="font-bold text-xl">Campus Order Guard</div>
       <div className="space-x-4">
         <Link to="/">Home</Link>
-        {!student && <Link to="/student-register">Student Register</Link>}
-        {!student && <Link to="/student-login">Student Login</Link>}
-        {student && (
+        <Link to="/student-register">Student Registration</Link>
+
+        {student || staff ? (
           <>
-            <span>Student: {student.rollNumber}</span>
+            {student && (
+              <Link to="/student-dashboard" className="relative">
+                Student Dashboard
+                {notificationCount > 0 && (
+                  <span className="absolute -top-2 -right-3 bg-red-500 text-xs rounded-full px-2">
+                    {notificationCount}
+                  </span>
+                )}
+              </Link>
+            )}
+            {staff && <Link to="/staff-dashboard">Staff Dashboard</Link>}
             <button
-              onClick={handleStudentLogout}
+              onClick={handleLogout}
               className="bg-white text-blue-600 px-2 py-1 rounded hover:bg-gray-200"
             >
               Logout
             </button>
           </>
-        )}
-        {!staff && <Link to="/staff-login">Staff Login</Link>}
-        {staff && staff.loggedIn && (
-          <>
-            <span>Staff</span>
-            <button
-              onClick={handleStaffLogout}
-              className="bg-white text-blue-600 px-2 py-1 rounded hover:bg-gray-200"
-            >
-              Logout
-            </button>
-          </>
+        ) : (
+          <Link to="/login">Login</Link>
         )}
       </div>
     </nav>

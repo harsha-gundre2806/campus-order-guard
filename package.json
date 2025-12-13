@@ -15,12 +15,13 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
-   "build:css": "tailwindcss -i ./src/tailwind.css -o ./src/index.generated.css",
-    "start": "npm run build:css & react-scripts start",
-    "build": "npm run build:css && react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
-  },
+  "build:css": "tailwindcss -i ./src/index.css -o ./src/index.generated.css",
+  "start": "npm run build:css && react-scripts start",
+  "build": "npm run build:css && react-scripts build",
+  "test": "react-scripts test",
+  "eject": "react-scripts eject"
+},
+
   "eslintConfig": {
     "extends": [
       "react-app",

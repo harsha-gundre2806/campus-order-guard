@@ -1,275 +1,240 @@
 import { useState, useEffect } from "react";
-import { collection, doc, getDoc, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
 import { db } from "../firebase";
-
-// --- Background Animation Component (Slow, Astroid-like Float) ---
-function BackgroundAnimation() {
-  // Use 20 parcels for subtle background noise
-  const parcels = [...Array(20)]; 
-
-  return (
-    <>
-      <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
-        {parcels.map((_, i) => {
-          const size = 18 + Math.random() * 12; // 18-30px font size
-          const startX = Math.random() * 100; // % start position X
-          const startY = Math.random() * 100; // % start position Y
-          const duration = 150 + Math.random() * 100; // 150s - 250s for VERY slow float
-          const delay = Math.random() * 50; // stagger start
-          
-          // Randomize a large offset (X and Y) for the final position
-          const targetX = (Math.random() - 0.5) * 800; // -400px to +400px
-          const targetY = (Math.random() - 0.5) * 600; // -300px to +300px
-
-          return (
-            <div
-              key={i}
-              className="absolute text-2xl"
-              style={{
-                fontSize: `${size}px`,
-                left: `${startX}%`,
-                top: `${startY}%`,
-                animation: `floatSpace ${duration}s linear infinite`,
-                animationDelay: `${delay}s`,
-                opacity: 0.05 + Math.random() * 0.1, // Very subtle opacity
-                
-                // Set the non-animating properties (the random end point)
-                '--end-x': `${targetX}px`,
-                '--end-y': `${targetY}px`,
-              }}
-            >
-              📦
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Global CSS Styles for Slow Floating Animation */}
-      {/* We use CSS variables to allow each parcel to follow a unique, non-repeating path */}
-      <style global jsx>
-        {`
-        @keyframes floatSpace {
-          0% {
-            transform: translate(0, 0) rotate(0deg);
-          }
-          100% {
-            /* Moves from (0,0) to the randomized (targetX, targetY) over a long period */
-            transform: translate(var(--end-x), var(--end-y)) rotate(360deg);
-          }
-        }
-        `}
-      </style>
-    </>
-  );
-}
-// --- End Background Animation Component ---
-
+import Animation1 from "../pages/animation1"; // ✅ background animation
 
 export default function StaffDashboard() {
-    const staff = JSON.parse(localStorage.getItem("staff"));
+  const staff = JSON.parse(localStorage.getItem("staff"));
 
-    const [showSendForm, setShowSendForm] = useState(false);
-    const [rollNumber, setRollNumber] = useState("");
-    const [platform, setPlatform] = useState("Amazon");
-    const [customPlatform, setCustomPlatform] = useState("");
-    const [orderId, setOrderId] = useState("");
-    const [otp, setOtp] = useState("");
-    const [successMsg, setSuccessMsg] = useState("");
-    const [allNotifications, setAllNotifications] = useState({});
-    const [searchTerm, setSearchTerm] = useState("");
+  const [showSendForm, setShowSendForm] = useState(false);
+  const [rollNumber, setRollNumber] = useState("");
+  const [platform, setPlatform] = useState("Amazon");
+  const [customPlatform, setCustomPlatform] = useState("");
+  const [orderId, setOrderId] = useState("");
+  const [otp, setOtp] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
+  const [allNotifications, setAllNotifications] = useState({});
+  const [searchTerm, setSearchTerm] = useState("");
 
-    const [students, setStudents] = useState([]);
-    const [studentSearch, setStudentSearch] = useState("");
+  const [students, setStudents] = useState([]);
+  const [studentSearch, setStudentSearch] = useState("");
 
-    // Load students from Firestore (real-time)
-    useEffect(() => {
-        const studentsCol = collection(db, "students");
-        const unsubscribe = onSnapshot(studentsCol, (snapshot) => {
-            const studentList = snapshot.docs.map(doc => doc.data());
-            setStudents(studentList);
+  const [sending, setSending] = useState(false); // ✅ loading state
+
+  /* -------------------- Load students -------------------- */
+  useEffect(() => {
+    const studentsCol = collection(db, "students");
+    const unsubscribe = onSnapshot(studentsCol, (snapshot) => {
+      setStudents(snapshot.docs.map((d) => d.data()));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  /* -------------------- Load notifications -------------------- */
+  useEffect(() => {
+    const notificationsCol = collection(db, "notifications");
+    const unsubscribe = onSnapshot(notificationsCol, (snapshot) => {
+      const notifObj = {};
+      snapshot.docs.forEach((d) => {
+        notifObj[d.id] = d.data().messages || [];
+      });
+      setAllNotifications(notifObj);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  /* -------------------- Send Notification -------------------- */
+  const handleSendNotification = async (e) => {
+    e.preventDefault();
+    if (!rollNumber || !platform || !orderId || !otp) return;
+
+    setSending(true); // ✅ show animation overlay
+
+    try {
+      const platformName =
+        platform === "Other" ? customPlatform.trim() : platform;
+
+      if (!/^\d{6}$/.test(otp)) {
+        alert("OTP must be a 6-digit number");
+        setSending(false);
+        return;
+      }
+
+      const studentRef = doc(db, "students", rollNumber);
+      const studentSnap = await getDoc(studentRef);
+
+      if (!studentSnap.exists()) {
+        alert("Student not registered");
+        setSending(false);
+        return;
+      }
+
+      const messageText = `Order from ${platformName} | Order ID: ${orderId} | OTP: ${otp}`;
+
+      const notifRef = doc(db, "notifications", rollNumber);
+      const notifSnap = await getDoc(notifRef);
+
+      const newMessage = {
+        message: messageText,
+        timestamp: new Date().toISOString(),
+        deleted: false,
+        read: false,
+      };
+
+      if (notifSnap.exists()) {
+        await updateDoc(notifRef, {
+          messages: [...notifSnap.data().messages, newMessage],
         });
-        return () => unsubscribe();
-    }, []);
+      } else {
+        await setDoc(notifRef, { messages: [newMessage] });
+      }
 
-    // Load notifications from Firestore (real-time)
-    useEffect(() => {
-        const notificationsCol = collection(db, "notifications");
-        const unsubscribe = onSnapshot(notificationsCol, (snapshot) => {
-            const notifObj = {};
-            snapshot.docs.forEach(doc => {
-                // Use doc.id (Roll Number) as the key
-                notifObj[doc.id] = doc.data().messages || [];
-            });
-            setAllNotifications(notifObj);
-        });
-        return () => unsubscribe();
-    }, []);
+      setSuccessMsg(`Notification sent to ${rollNumber}`);
+      setRollNumber("");
+      setPlatform("Amazon");
+      setCustomPlatform("");
+      setOrderId("");
+      setOtp("");
 
-    const handleSendClick = () => setShowSendForm(!showSendForm);
-
-    const handleSendNotification = async (e) => {
-        e.preventDefault();
-        if (!rollNumber || !platform || !orderId || !otp) return;
-
-        // Determine the platform name
-        const platformName = platform === "Other" ? customPlatform.trim() : platform;
-
-        // Validate OTP
-        if (!/^\d{6}$/.test(otp)) {
-            alert("OTP must be a 6-digit number");
-            return;
-        }
-
-        // Check if student exists
-        const studentDocRef = doc(db, "students", rollNumber);
-        const studentDoc = await getDoc(studentDocRef);
-        if (!studentDoc.exists()) {
-            alert("Student not registered");
-            return;
-        }
-
-        // Compose the notification message
-        const notificationMessage = `Order from ${platformName} | Order ID: ${orderId} | OTP: ${otp}`;
-
-        const notifRef = doc(db, "notifications", rollNumber);
-        const notifSnap = await getDoc(notifRef);
-
-        const newMessage = {
-            message: notificationMessage,
-            timestamp: new Date().toISOString(),
-            deleted: false,
-            read: false,
-        };
-
-        if (notifSnap.exists()) {
-            const existingMessages = notifSnap.data().messages || [];
-            await updateDoc(notifRef, { messages: [...existingMessages, newMessage] });
-        } else {
-            await setDoc(notifRef, { messages: [newMessage] });
-        }
-
-        setSuccessMsg(`Notification sent to ${rollNumber}`);
-        setRollNumber("");
-        setPlatform("Amazon");
-        setCustomPlatform("");
-        setOrderId("");
-        setOtp("");
-        setTimeout(() => setSuccessMsg(""), 3000);
-    };
-
-    const handleDeleteNotification = async (roll, messageIndex) => {
-        const notifRef = doc(db, "notifications", roll);
-        const notifSnap = await getDoc(notifRef);
-
-        if (notifSnap.exists()) {
-            const messages = notifSnap.data().messages || [];
-            // Use spread to create a new array before modification to avoid state mutation warnings
-            const updatedMessages = [...messages]; 
-            
-            // Mark the specific message as deleted
-            if (updatedMessages[messageIndex]) {
-                updatedMessages[messageIndex].deleted = true;
-                await updateDoc(notifRef, { messages: updatedMessages });
-            }
-        }
-    };
-
-    if (!staff || !staff.loggedIn) {
-        return (
-            <div className="p-8 max-w-3xl mx-auto">
-                <h2 className="text-2xl font-bold">Access Denied</h2>
-                <p>You must be logged in as staff to view this page.</p>
-            </div>
-        );
+      setTimeout(() => setSuccessMsg(""), 3000);
+    } catch (err) {
+      alert("Failed to send notification");
+      console.error(err);
+    } finally {
+      setSending(false); // ✅ hide animation
     }
+  };
 
-    const filteredNotifications = Object.entries(allNotifications).filter(([roll]) =>
-        roll.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+  /* -------------------- Delete notification -------------------- */
+  const handleDeleteNotification = async (roll, index) => {
+    const notifRef = doc(db, "notifications", roll);
+    const notifSnap = await getDoc(notifRef);
 
-    const filteredStudents = students.filter((s) =>
-        s.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
-        s.email.toLowerCase().includes(studentSearch.toLowerCase()) ||
-        s.mobile.includes(studentSearch) ||
-        s.rollNumber.toLowerCase().includes(studentSearch.toLowerCase())
-    );
+    if (notifSnap.exists()) {
+      const updated = [...notifSnap.data().messages];
+      if (updated[index]) {
+        updated[index].deleted = true;
+        await updateDoc(notifRef, { messages: updated });
+      }
+    }
+  };
 
+  if (!staff || !staff.loggedIn) {
     return (
-        <div className="p-8 max-w-3xl mx-auto relative min-h-screen overflow-hidden">
-            {/* The Background Animation is placed here */}
-            <BackgroundAnimation />
+      <div className="p-8 max-w-3xl mx-auto">
+        <h2 className="text-2xl font-bold">Access Denied</h2>
+      </div>
+    );
+  }
 
-            {/* All main content needs a higher z-index to appear over the background */}
-            <div className="relative z-10"> 
-                <h2 className="text-3xl font-bold mb-6">Staff Dashboard</h2>
+  const filteredNotifications = Object.entries(allNotifications).filter(
+    ([roll]) => roll.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-                <button
-                    onClick={handleSendClick}
-                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition mb-6"
-                >
-                    {showSendForm ? "Cancel" : "Send Notification"}
-                </button>
+  const filteredStudents = students.filter(
+    (s) =>
+      s.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
+      s.email.toLowerCase().includes(studentSearch.toLowerCase()) ||
+      s.mobile.includes(studentSearch) ||
+      s.rollNumber.toLowerCase().includes(studentSearch.toLowerCase())
+  );
 
-                {showSendForm && (
-                    <div className="bg-white p-4 rounded shadow mb-6">
-                        <form onSubmit={handleSendNotification} className="space-y-3">
-                            <input
-                                placeholder="Student Roll Number"
-                                value={rollNumber}
-                                onChange={(e) => setRollNumber(e.target.value)}
-                                className="w-full p-2 border rounded"
-                                required
-                            />
+  return (
+    <div className="relative min-h-screen overflow-hidden">
+      {/* ✅ Background Animation */}
+      <Animation1 />
 
-                            <select
-                                value={platform}
-                                onChange={(e) => setPlatform(e.target.value)}
-                                className="w-full p-2 border rounded"
-                            >
-                                <option>Amazon</option>
-                                <option>Flipkart</option>
-                                <option>Meesho</option>
-                                <option>Blinkit</option>
-                                <option>Other</option>
-                            </select>
+      {/* ✅ Sending overlay animation */}
+      {sending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur">
+          <Animation1 />
+          <p className="absolute bottom-20 text-lg font-semibold text-gray-700">
+            Sending notification...
+          </p>
+        </div>
+      )}
 
-                            {platform === "Other" && (
-                                <input
-                                    placeholder="Enter platform name"
-                                    value={customPlatform}
-                                    onChange={(e) => setCustomPlatform(e.target.value)}
-                                    className="w-full p-2 border rounded"
-                                    required
-                                />
-                            )}
+      {/* Main content */}
+      <div className="p-8 max-w-3xl mx-auto relative z-10">
+        <h2 className="text-3xl font-bold mb-6">Staff Dashboard</h2>
 
-                            <input
-                                placeholder="Order ID"
-                                value={orderId}
-                                onChange={(e) => setOrderId(e.target.value)}
-                                className="w-full p-2 border rounded"
-                                required
-                            />
-                            <input
-                                placeholder="6-digit OTP"
-                                value={otp}
-                                onChange={(e) => setOtp(e.target.value)}
-                                className="w-full p-2 border rounded"
-                                required
-                            />
+        <button
+          onClick={() => setShowSendForm(!showSendForm)}
+          className="bg-blue-600 text-white px-4 py-2 rounded mb-6"
+        >
+          {showSendForm ? "Cancel" : "Send Notification"}
+        </button>
 
-                            <button
-                                type="submit"
-                                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition"
-                            >
-                                Send
-                            </button>
-                        </form>
-                        {successMsg && <p className="text-green-600 mt-2">{successMsg}</p>}
-                    </div>
-                )}
+        {showSendForm && (
+          <div className="bg-white p-4 rounded shadow mb-6">
+            <form onSubmit={handleSendNotification} className="space-y-3">
+              <input
+                placeholder="Student Roll Number"
+                value={rollNumber}
+                onChange={(e) => setRollNumber(e.target.value)}
+                className="w-full p-2 border rounded"
+                required
+              />
 
-                {/* Search notifications */}
+              <select
+                value={platform}
+                onChange={(e) => setPlatform(e.target.value)}
+                className="w-full p-2 border rounded"
+              >
+                <option>Amazon</option>
+                <option>Flipkart</option>
+                <option>Meesho</option>
+                <option>Blinkit</option>
+                <option>Other</option>
+              </select>
+
+              {platform === "Other" && (
+                <input
+                  placeholder="Platform name"
+                  value={customPlatform}
+                  onChange={(e) => setCustomPlatform(e.target.value)}
+                  className="w-full p-2 border rounded"
+                  required
+                />
+              )}
+
+              <input
+                placeholder="Order ID"
+                value={orderId}
+                onChange={(e) => setOrderId(e.target.value)}
+                className="w-full p-2 border rounded"
+                required
+              />
+              <input
+                placeholder="6-digit OTP"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                className="w-full p-2 border rounded"
+                required
+              />
+
+              <button
+                type="submit"
+                className="bg-green-600 text-white px-4 py-2 rounded"
+              >
+                Send
+              </button>
+            </form>
+
+            {successMsg && (
+              <p className="text-green-600 mt-2">{successMsg}</p>
+            )}
+          </div>
+        )}
+
+       {/* Search notifications */}
                 <div className="mb-4">
                     <input
                         type="text"
@@ -279,9 +244,7 @@ export default function StaffDashboard() {
                         className="w-full p-2 border rounded"
                     />
                 </div>
-
-                {/* Notifications */}
-                <div className="bg-white p-4 rounded shadow mb-10">
+         <div className="bg-white p-4 rounded shadow mb-10">
                     <h3 className="font-semibold mb-2">All Notifications</h3>
                     {filteredNotifications.length === 0 ? (
                         <p>No notifications found.</p>
@@ -317,9 +280,7 @@ export default function StaffDashboard() {
                         </ul>
                     )}
                 </div>
-
-                {/* Students List */}
-                <div className="bg-white p-4 rounded shadow">
+<div className="bg-white p-4 rounded shadow">
                     <h3 className="font-semibold mb-3">All Students</h3>
                     <input
                         type="text"
@@ -346,7 +307,9 @@ export default function StaffDashboard() {
                 </div>
 
                 <p className="mt-4 text-gray-700">Welcome, Staff! You are logged in.</p>
-            </div>
-        </div>
-    );
+
+
+      </div>
+    </div>
+  );
 }

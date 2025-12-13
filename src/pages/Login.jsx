@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "../firebase";
 
 export default function Login({ setStaff, setStudent }) {
   const [username, setUsername] = useState("");
@@ -7,7 +10,7 @@ export default function Login({ setStaff, setStudent }) {
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const trimmedUsername = username.trim();
     const trimmedPassword = password.trim();
@@ -23,20 +26,47 @@ export default function Login({ setStaff, setStudent }) {
       return;
     }
 
-    // Student login
-    const students = JSON.parse(localStorage.getItem("students")) || [];
-    const student = students.find(
-      (s) => s.rollNumber === trimmedUsername && s.password === trimmedPassword
-    );
+    try {
+      let emailToUse = trimmedUsername;
 
-    if (student) {
-      const studentData = { rollNumber: student.rollNumber };
+      // Check if username is rollNumber
+      if (!trimmedUsername.includes("@")) {
+        // Fetch student by rollNumber
+        const studentRef = doc(db, "students", trimmedUsername);
+        const studentSnap = await getDoc(studentRef);
+
+        if (!studentSnap.exists()) {
+          setError("Invalid roll number or password");
+          return;
+        }
+
+        // Get email from Firestore
+        emailToUse = studentSnap.data().email;
+      }
+
+      // Sign in with Firebase Auth
+      const userCredential = await signInWithEmailAndPassword(
+        auth,
+        emailToUse,
+        trimmedPassword
+      );
+
+      const studentData = {
+        uid: userCredential.user.uid,
+        rollNumber: trimmedUsername.includes("@")
+          ? null
+          : trimmedUsername,
+      };
+
       localStorage.setItem("student", JSON.stringify(studentData));
       setStudent(studentData);
+
       setUsername("");
       setPassword("");
+
       navigate("/student-dashboard");
-    } else {
+    } catch (err) {
+      console.error(err);
       setError("Invalid username or password");
     }
   };
@@ -46,7 +76,7 @@ export default function Login({ setStaff, setStudent }) {
       <h2 className="text-2xl font-bold mb-6 text-center">Login</h2>
       <form onSubmit={handleSubmit} className="space-y-4">
         <input
-          placeholder="Username / Roll Number"
+          placeholder="Email or Roll Number"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           className="w-full p-2 border rounded"

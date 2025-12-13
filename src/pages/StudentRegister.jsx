@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc, getDoc } from "firebase/firestore";
+import { auth, db } from "../firebase";
 
 export default function StudentRegister() {
   const [form, setForm] = useState({
@@ -9,41 +12,65 @@ export default function StudentRegister() {
     rollNumber: "",
     password: "",
   });
+
   const navigate = useNavigate();
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Get existing students from localStorage
-    const students = JSON.parse(localStorage.getItem("students")) || [];
+    try {
+      // 🔍 Check if roll number already exists
+      const studentRef = doc(db, "students", form.rollNumber);
+      const studentSnap = await getDoc(studentRef);
 
-    // Check if roll number already exists
-    const existingStudent = students.find(s => s.rollNumber === form.rollNumber);
-    if (existingStudent) {
-      alert("This roll number is already registered!");
-      return;
+      if (studentSnap.exists()) {
+        alert("This roll number is already registered!");
+        return;
+      }
+
+      // 🔐 Create Firebase Auth account
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        form.email,
+        form.password
+      );
+
+      // 🗄 Save student details in Firestore
+      await setDoc(studentRef, {
+        uid: userCredential.user.uid,
+        name: form.name,
+        email: form.email,
+        mobile: form.mobile,
+        rollNumber: form.rollNumber,
+        createdAt: new Date(),
+      });
+
+      alert(`Student Registered Successfully!\nRoll No: ${form.rollNumber}`);
+
+      setForm({
+        name: "",
+        email: "",
+        mobile: "",
+        rollNumber: "",
+        password: "",
+      });
+
+      navigate("/login");
+    } catch (error) {
+      alert(error.message);
     }
-
-    // Add new student
-    students.push(form);
-    localStorage.setItem("students", JSON.stringify(students));
-
-    alert(`Student Registered Successfully!\nRoll No: ${form.rollNumber}`);
-
-    // Clear form
-    setForm({ name: "", email: "", mobile: "", rollNumber: "", password: "" });
-
-    // Optionally redirect to login page
-    navigate("/login");
   };
 
   return (
     <div className="max-w-md mx-auto mt-10 p-6 bg-white shadow rounded">
-      <h2 className="text-2xl font-bold mb-6 text-center">Student Registration</h2>
+      <h2 className="text-2xl font-bold mb-6 text-center">
+        Student Registration
+      </h2>
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <input
           name="name"
@@ -55,10 +82,10 @@ export default function StudentRegister() {
         />
         <input
           name="email"
+          type="email"
           placeholder="Email"
           value={form.email}
           onChange={handleChange}
-          type="email"
           className="w-full p-2 border rounded"
           required
         />
@@ -67,7 +94,6 @@ export default function StudentRegister() {
           placeholder="Mobile Number"
           value={form.mobile}
           onChange={handleChange}
-          type="tel"
           className="w-full p-2 border rounded"
           required
         />
@@ -81,13 +107,14 @@ export default function StudentRegister() {
         />
         <input
           name="password"
+          type="password"
           placeholder="Password"
           value={form.password}
           onChange={handleChange}
-          type="password"
           className="w-full p-2 border rounded"
           required
         />
+
         <button
           type="submit"
           className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 transition"
